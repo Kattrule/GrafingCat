@@ -10,17 +10,14 @@
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     
-    /* Mörk, nästan svart lila bakgrund */
     body { background-color: #130c1e; margin: 0; padding: 15px; color: #f1f5f9; }
     h1, h2, h3 { margin-top: 0; color: #ffffff; }
     
-    /* Mörkare kort med subtle lila nyans */
     .card { background: #1c132b; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
     .project-card { background: #241838; border: 1px solid #3b285a; }
     
     label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: #c4b5fd; }
     
-    /* Mörka inputfält och val */
     input, select, button { 
       width: 100%; 
       padding: 10px; 
@@ -34,16 +31,19 @@
     select option { background-color: #271c3a; color: #f1f5f9; }
     input[type="color"] { height: 45px; padding: 2px; cursor: pointer; background: none; }
     
-    /* Mörkblå knappar */
     button { background-color: #1e40af; color: white; border: none; font-weight: 600; cursor: pointer; transition: background 0.2s; }
     button:active { background-color: #1e3a8a; }
     button.danger { background-color: #851e1e; }
+    button.secondary { background-color: rgba(39, 28, 58, 0.9); border: 1px solid #4c3869; backdrop-filter: blur(4px); }
     
     .row { display: flex; gap: 10px; }
     .row > div { flex: 1; }
 
-    #chartContainer { position: relative; width: 100%; height: 320px; }
-    canvas { width: 100%; height: 100%; display: block; }
+    #chartContainer { position: relative; width: 100%; height: 320px; overflow: hidden; border-radius: 8px; background: #130c1e; }
+    
+    /* Viktigt för att tillåta touch/zoom utan att hela sidan dras */
+    #chartCanvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+    #chartCanvas:active { cursor: grabbing; }
 
     .graph-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
     .legend-item { display: flex; align-items: center; gap: 6px; background: #271c3a; padding: 6px 10px; border-radius: 20px; border: 1px solid #4c3869; font-size: 0.85rem; color: #f1f5f9; }
@@ -58,7 +58,6 @@
 
   <h1>📊 Mina Grafer</h1>
 
-  <!-- Projekthantering -->
   <div class="card project-card">
     <label for="projectSelect">Aktivt Projekt</label>
     <div class="row">
@@ -82,16 +81,15 @@
     </form>
   </div>
 
-  <!-- Graf-visning -->
   <div class="card">
     <h2 id="currentProjectTitle">Översikt</h2>
     <div id="legend" class="graph-legend"></div>
     <div id="chartContainer">
+      <button class="secondary" onclick="resetZoom()" style="position: absolute; top: 8px; right: 8px; width: auto; padding: 6px 12px; font-size: 0.75rem; z-index: 10; margin: 0; border-radius: 20px;">Återställ Zoom</button>
       <canvas id="chartCanvas"></canvas>
     </div>
   </div>
 
-  <!-- Lägg till datapunkt -->
   <div class="card">
     <h3>Skriv in nytt värde</h3>
     <form id="pointForm">
@@ -108,12 +106,10 @@
           <input type="number" id="pointValue" min="1" max="10" step="0.1" value="5" required>
         </div>
       </div>
-
       <button type="submit">Spara datapunkt</button>
     </form>
   </div>
 
-  <!-- Skapa ny graf i projektet -->
   <div class="card">
     <h3>Skapa ny graf i projektet</h3>
     <form id="graphForm">
@@ -131,27 +127,26 @@
     </form>
   </div>
 
-  <!-- Hantera sparad data -->
   <div class="card">
     <h3>Hantera Grafer & Punkter</h3>
     <div id="dataManager" class="data-list"></div>
   </div>
 
   <script>
-    const STORAGE_KEY = 'pwa_projects_data_v2';
+    const STORAGE_KEY = 'pwa_projects_data_v3';
 
     let appData = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
       activeProjectId: 'p1',
-      projects: [
-        {
-          id: 'p1',
-          name: 'Hälsa & Mående',
-          graphs: [
-            { id: 'g1', name: 'Sömn', color: '#818cf8', visible: true, points: [] }
-          ]
-        }
-      ]
+      projects: [{ id: 'p1', name: 'Hälsa & Mående', graphs: [{ id: 'g1', name: 'Sömn', color: '#818cf8', visible: true, points: [] }] }]
     };
+
+    // Zoom- & Panorerings-variabler
+    let transform = { x: 0, y: 0, scale: 1 };
+
+    function resetZoom() {
+      transform = { x: 0, y: 0, scale: 1 };
+      drawChart();
+    }
 
     function saveData() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
@@ -172,36 +167,29 @@
 
     function switchProject(id) {
       appData.activeProjectId = id;
+      resetZoom();
       saveData();
     }
 
     document.getElementById('projectForm').addEventListener('submit', (e) => {
       e.preventDefault();
-      const input = document.getElementById('projectName');
-      const name = input.value.trim();
+      const name = document.getElementById('projectName').value.trim();
       if (!name) return;
-
-      const newProj = {
-        id: 'p_' + Date.now(),
-        name: name,
-        graphs: []
-      };
-
+      const newProj = { id: 'p_' + Date.now(), name: name, graphs: [] };
       appData.projects.push(newProj);
       appData.activeProjectId = newProj.id;
-      input.value = '';
+      document.getElementById('projectName').value = '';
+      resetZoom();
       saveData();
     });
 
     function deleteActiveProject() {
-      if (appData.projects.length <= 1) {
-        alert('Du måste ha minst ett projekt kvar.');
-        return;
-      }
+      if (appData.projects.length <= 1) return alert('Du måste ha minst ett projekt kvar.');
       const activeProj = getActiveProject();
-      if (confirm(`Vill du radera projektet "${activeProj.name}" och alla dess grafer?`)) {
+      if (confirm(`Vill du radera projektet "${activeProj.name}"?`)) {
         appData.projects = appData.projects.filter(p => p.id !== activeProj.id);
         appData.activeProjectId = appData.projects[0].id;
+        resetZoom();
         saveData();
       }
     }
@@ -210,18 +198,9 @@
       e.preventDefault();
       const activeProj = getActiveProject();
       if (!activeProj) return;
-
       const name = document.getElementById('graphName').value.trim();
       const color = document.getElementById('graphColor').value;
-
-      activeProj.graphs.push({
-        id: 'g_' + Date.now(),
-        name: name,
-        color: color,
-        visible: true,
-        points: []
-      });
-
+      activeProj.graphs.push({ id: 'g_' + Date.now(), name: name, color: color, visible: true, points: [] });
       document.getElementById('graphName').value = '';
       saveData();
     });
@@ -230,7 +209,6 @@
       e.preventDefault();
       const activeProj = getActiveProject();
       if (!activeProj) return;
-
       const graphId = document.getElementById('graphSelect').value;
       const date = document.getElementById('pointDate').value;
       const value = parseFloat(document.getElementById('pointValue').value);
@@ -238,11 +216,8 @@
       const graph = activeProj.graphs.find(g => g.id === graphId);
       if (graph) {
         const existingIdx = graph.points.findIndex(p => p.date === date);
-        if (existingIdx >= 0) {
-          graph.points[existingIdx].value = value;
-        } else {
-          graph.points.push({ date, value });
-        }
+        if (existingIdx >= 0) graph.points[existingIdx].value = value;
+        else graph.points.push({ date, value });
         saveData();
       }
     });
@@ -305,7 +280,6 @@
         activeProj.graphs.forEach(g => {
           const item = document.createElement('label');
           item.className = 'legend-item';
-          item.style.cursor = 'pointer';
           item.innerHTML = `
             <input type="checkbox" ${g.visible !== false ? 'checked' : ''} onchange="toggleVisibility('${g.id}')">
             <span class="color-dot" style="background:${g.color}"></span>
@@ -331,7 +305,6 @@
             <button class="danger" style="width:auto; margin:0; padding:4px 8px;" onclick="deleteGraph('${g.id}')">Ta bort graf</button>
           </div>
         `;
-        
         const sortedPoints = [...g.points].sort((a,b) => new Date(a.date) - new Date(b.date));
         sortedPoints.forEach(p => {
           const pDiv = document.createElement('div');
@@ -356,42 +329,22 @@
       const rect = canvas.parentElement.getBoundingClientRect();
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
+      
+      // Återställ skala och sätt till DPR
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
 
-      const w = rect.width;
-      const h = rect.height;
+      const w = rect.width, h = rect.height;
       const padL = 35, padR = 20, padT = 20, padB = 40;
-      const chartW = w - padL - padR;
-      const chartH = h - padT - padB;
+      const chartW = w - padL - padR, chartH = h - padT - padB;
 
       ctx.clearRect(0, 0, w, h);
 
-      // Y-axel (Mörka linjer och ljus text)
-      ctx.lineWidth = 1;
-      ctx.font = '12px sans-serif';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-
-      for (let i = 1; i <= 10; i++) {
-        const y = padT + chartH - ((i - 1) / 9) * chartH;
-        ctx.strokeStyle = '#32254a'; // Mörk lila rutnät
-        ctx.beginPath();
-        ctx.moveTo(padL, y);
-        ctx.lineTo(w - padR, y);
-        ctx.stroke();
-
-        ctx.fillStyle = '#94a3b8'; // Ljusgrå text för siffrorna
-        ctx.fillText(i.toString(), padL - 8, y);
-      }
-
       if (!activeProj) return;
-
       const activeGraphs = activeProj.graphs.filter(g => g.visible !== false && g.points && g.points.length > 0);
 
       let allTimestamps = [];
-      activeGraphs.forEach(g => {
-        g.points.forEach(p => allTimestamps.push(new Date(p.date).getTime()));
-      });
+      activeGraphs.forEach(g => g.points.forEach(p => allTimestamps.push(new Date(p.date).getTime())));
 
       if (allTimestamps.length === 0) {
         ctx.fillStyle = '#9ca3af';
@@ -403,62 +356,192 @@
       const minT = Math.min(...allTimestamps);
       const maxT = Math.max(...allTimestamps);
 
-      function getX(ts) {
-        if (minT === maxT) return padL + chartW / 2;
-        return padL + ((ts - minT) / (maxT - minT)) * chartW;
+      // Transformerade funktioner för X och Y
+      function getScaledX(ts) {
+        const base = minT === maxT ? chartW / 2 : ((ts - minT) / (maxT - minT)) * chartW;
+        return padL + base * transform.scale + transform.x;
       }
 
-      function getY(val) {
+      function getScaledY(val) {
         const clamped = Math.max(1, Math.min(10, val));
-        return padT + chartH - ((clamped - 1) / 9) * chartH;
+        const base = chartH - ((clamped - 1) / 9) * chartH;
+        return padT + base * transform.scale + transform.y;
       }
 
-      // X-axel (Datum)
+      // --- RITA AXLAR (Bakgrund & Text) ---
+      ctx.lineWidth = 1;
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+
+      // Y-axel (1-10) - visas bara om de hamnar inom rutans höjd
+      for (let i = 1; i <= 10; i++) {
+        const y = getScaledY(i);
+        if (y >= padT && y <= padT + chartH) {
+          ctx.strokeStyle = '#2d2242'; 
+          ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText(i.toString(), padL - 8, y);
+        }
+      }
+
+      // X-axel (Datum) - begränsar hur tätt de ritas så texten inte överlappar
       const uniqueDates = Array.from(new Set(allTimestamps)).sort((a, b) => a - b);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillStyle = '#94a3b8';
-
-      const step = Math.ceil(uniqueDates.length / 5);
-      uniqueDates.forEach((ts, idx) => {
-        if (idx % step === 0 || idx === uniqueDates.length - 1) {
-          const x = getX(ts);
-          const d = new Date(ts);
-          ctx.fillText(`${d.getDate()}/${d.getMonth() + 1}`, x, h - padB + 8);
+      
+      let lastDrawnX = -100;
+      uniqueDates.forEach((ts) => {
+        const x = getScaledX(ts);
+        if (x >= padL && x <= w - padR) {
+          // Rita bara text om det är minst 40 pixlar från förra texten (hindrar kluster)
+          if (x - lastDrawnX > 45) {
+            const d = new Date(ts);
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillText(`${d.getDate()}/${d.getMonth() + 1}`, x, h - padB + 8);
+            
+            // Svaga lodräta linjer för tydlighet
+            ctx.strokeStyle = '#221932';
+            ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + chartH); ctx.stroke();
+            
+            lastDrawnX = x;
+          }
         }
       });
 
-      // Linjer & punkter
+      // --- KLIPPMASK: Rita graferna enbart inuti rutnätet ---
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(padL, padT, chartW, chartH);
+      ctx.clip();
+
       activeGraphs.forEach(g => {
         const points = [...g.points].sort((a, b) => new Date(a.date) - new Date(b.date));
 
+        // 1. Mjuk SPLINE-kurva (Bezier)
         ctx.strokeStyle = g.color || '#818cf8';
         ctx.lineWidth = 3;
         ctx.beginPath();
 
         points.forEach((p, idx) => {
-          const x = getX(new Date(p.date).getTime());
-          const y = getY(p.value);
-          if (idx === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+          const x = getScaledX(new Date(p.date).getTime());
+          const y = getScaledY(p.value);
+          if (idx === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            const prevP = points[idx - 1];
+            const prevX = getScaledX(new Date(prevP.date).getTime());
+            const prevY = getScaledY(prevP.value);
+            
+            // Räkna ut kontrollpunkter för mjuka svängar
+            const cp1x = (prevX + x) / 2;
+            const cp2x = (prevX + x) / 2;
+            ctx.bezierCurveTo(cp1x, prevY, cp2x, y, x, y);
+          }
         });
         ctx.stroke();
 
+        // 2. Datapunkter
         points.forEach(p => {
-          const x = getX(new Date(p.date).getTime());
-          const y = getY(p.value);
-
+          const x = getScaledX(new Date(p.date).getTime());
+          const y = getScaledY(p.value);
           ctx.fillStyle = g.color || '#818cf8';
           ctx.beginPath();
           ctx.arc(x, y, 5, 0, Math.PI * 2);
           ctx.fill();
-
-          ctx.strokeStyle = '#1c132b'; // Mörk kant runt punkterna
+          ctx.strokeStyle = '#1c132b'; 
           ctx.lineWidth = 2;
           ctx.stroke();
         });
       });
+
+      // Ta bort klippmasken så resten av sidan inte påverkas
+      ctx.restore();
     }
+
+    // --- EVENT-LISTENERS FÖR ZOOM OCH PANORERING ---
+    const canvas = document.getElementById('chartCanvas');
+    
+    // Mushjul (Scroll för att zooma på dator)
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left - 35; // padL
+      const mouseY = e.clientY - rect.top - 20;  // padT
+
+      const zoomSens = 0.002;
+      const delta = -e.deltaY * zoomSens;
+      let newScale = Math.max(1, Math.min(transform.scale * Math.exp(delta), 30));
+
+      transform.x = mouseX - (mouseX - transform.x) * (newScale / transform.scale);
+      transform.y = mouseY - (mouseY - transform.y) * (newScale / transform.scale);
+      transform.scale = newScale;
+      drawChart();
+    });
+
+    // Mus-drag (Dra med musen för att panorera)
+    let isDragging = false, lastX = 0, lastY = 0, initialPinchDist = null, initialScale = 1;
+
+    canvas.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      lastX = e.clientX; lastY = e.clientY;
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      transform.x += (e.clientX - lastX);
+      transform.y += (e.clientY - lastY);
+      lastX = e.clientX; lastY = e.clientY;
+      drawChart();
+    });
+    window.addEventListener('mouseup', () => isDragging = false);
+
+    // Touch-kontroller för mobil (Dra = panorera, Nyp = zooma)
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        isDragging = true;
+        lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        isDragging = false;
+        initialPinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        initialScale = transform.scale;
+      }
+      e.preventDefault(); // Hindrar skärmen från att rulla iväg
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (isDragging && e.touches.length === 1) {
+        transform.x += (e.touches[0].clientX - lastX);
+        transform.y += (e.touches[0].clientY - lastY);
+        lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+        drawChart();
+      } else if (e.touches.length === 2 && initialPinchDist) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        let newScale = Math.max(1, Math.min(initialScale * (dist / initialPinchDist), 30));
+
+        const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = centerX - rect.left - 35;
+        const mouseY = centerY - rect.top - 20;
+
+        transform.x = mouseX - (mouseX - transform.x) * (newScale / transform.scale);
+        transform.y = mouseY - (mouseY - transform.y) * (newScale / transform.scale);
+        transform.scale = newScale;
+        drawChart();
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) initialPinchDist = null;
+      if (e.touches.length === 0) isDragging = false;
+    });
 
     window.addEventListener('resize', drawChart);
 
