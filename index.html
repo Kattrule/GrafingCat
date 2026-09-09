@@ -5,22 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mina Grafer</title>
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#4f46e5">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <meta name="theme-color" content="#130c1e">
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background-color: #2B0B41; margin: 0; padding: 15px; color: #1f2937; }
-    h1, h2, h3 { margin-top: 0; }
-    .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    .project-card { background: #eef2ff; border: 1px solid #c7d2fe; }
     
-    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: #4b5563; }
-    input, select, button { width: 100%; padding: 10px; margin-bottom: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 1rem; }
-    input[type="color"] { height: 45px; padding: 2px; cursor: pointer; }
+    /* Mörk, nästan svart lila bakgrund */
+    body { background-color: #130c1e; margin: 0; padding: 15px; color: #f1f5f9; }
+    h1, h2, h3 { margin-top: 0; color: #ffffff; }
     
-    button { background-color: #4f46e5; color: white; border: none; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-    button:active { background-color: #4338ca; }
-    button.danger { background-color: #ef4444; }
-    button.secondary { background-color: #6b7280; }
+    /* Mörkare kort med subtle lila nyans */
+    .card { background: #1c132b; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+    .project-card { background: #241838; border: 1px solid #3b285a; }
+    
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: #c4b5fd; }
+    
+    /* Mörka inputfält och val */
+    input, select, button { 
+      width: 100%; 
+      padding: 10px; 
+      margin-bottom: 12px; 
+      border: 1px solid #4c3869; 
+      border-radius: 8px; 
+      font-size: 1rem; 
+      background-color: #271c3a; 
+      color: #f1f5f9; 
+    }
+    select option { background-color: #271c3a; color: #f1f5f9; }
+    input[type="color"] { height: 45px; padding: 2px; cursor: pointer; background: none; }
+    
+    /* Mörkblå knappar */
+    button { background-color: #1e40af; color: white; border: none; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    button:active { background-color: #1e3a8a; }
+    button.danger { background-color: #851e1e; }
     
     .row { display: flex; gap: 10px; }
     .row > div { flex: 1; }
@@ -29,11 +46,11 @@
     canvas { width: 100%; height: 100%; display: block; }
 
     .graph-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-    .legend-item { display: flex; align-items: center; gap: 6px; background: #f9fafb; padding: 6px 10px; border-radius: 20px; border: 1px solid #e5e7eb; font-size: 0.85rem; }
+    .legend-item { display: flex; align-items: center; gap: 6px; background: #271c3a; padding: 6px 10px; border-radius: 20px; border: 1px solid #4c3869; font-size: 0.85rem; color: #f1f5f9; }
     .color-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
 
     .data-list { max-height: 200px; overflow-y: auto; font-size: 0.9rem; }
-    .data-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+    .data-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #271c3a; }
     .data-item button { width: auto; margin: 0; padding: 4px 8px; font-size: 0.75rem; }
   </style>
 </head>
@@ -107,7 +124,7 @@
         </div>
         <div style="flex: 0.4;">
           <label for="graphColor">Färg</label>
-          <input type="color" id="graphColor" value="#4f46e5">
+          <input type="color" id="graphColor" value="#818cf8">
         </div>
       </div>
       <button type="submit">Skapa Graf</button>
@@ -121,7 +138,6 @@
   </div>
 
   <script>
-    // --- DATAMODELL MED PROJEKT ---
     const STORAGE_KEY = 'pwa_projects_data_v2';
 
     let appData = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
@@ -131,7 +147,7 @@
           id: 'p1',
           name: 'Hälsa & Mående',
           graphs: [
-            { id: 'g1', name: 'Sömn', color: '#4f46e5', visible: true, points: [] }
+            { id: 'g1', name: 'Sömn', color: '#818cf8', visible: true, points: [] }
           ]
         }
       ]
@@ -152,10 +168,8 @@
       return proj;
     }
 
-    // Sett default datum till idag
     document.getElementById('pointDate').valueAsDate = new Date();
 
-    // --- PROJEKTHANTERING ---
     function switchProject(id) {
       appData.activeProjectId = id;
       saveData();
@@ -192,7 +206,6 @@
       }
     }
 
-    // --- GRAF- & DATAPUNKTS-HANTERING ---
     document.getElementById('graphForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const activeProj = getActiveProject();
@@ -260,11 +273,9 @@
       }
     }
 
-    // --- UPPDATERA UI ---
     function renderUI() {
       const activeProj = getActiveProject();
 
-      // 1. Projektdropdown
       const projSelect = document.getElementById('projectSelect');
       projSelect.innerHTML = '';
       appData.projects.forEach(p => {
@@ -277,7 +288,6 @@
 
       document.getElementById('currentProjectTitle').textContent = activeProj ? activeProj.name : 'Översikt';
 
-      // 2. Grafväljare i punktsformuläret
       const select = document.getElementById('graphSelect');
       select.innerHTML = '';
       if (activeProj) {
@@ -289,7 +299,6 @@
         });
       }
 
-      // 3. Legend
       const legend = document.getElementById('legend');
       legend.innerHTML = '';
       if (activeProj) {
@@ -306,11 +315,10 @@
         });
       }
 
-      // 4. Listhantering för inställningar
       const manager = document.getElementById('dataManager');
       manager.innerHTML = '';
       if (!activeProj || activeProj.graphs.length === 0) {
-        manager.innerHTML = '<p style="color:#9ca3af; text-align:center;">Inga grafer finns i detta projekt än.</p>';
+        manager.innerHTML = '<p style="color:#a78bfa; text-align:center;">Inga grafer finns i detta projekt än.</p>';
         return;
       }
 
@@ -339,7 +347,6 @@
       });
     }
 
-    // --- RITA GRAF ---
     function drawChart() {
       const canvas = document.getElementById('chartCanvas');
       const ctx = canvas.getContext('2d');
@@ -359,7 +366,7 @@
 
       ctx.clearRect(0, 0, w, h);
 
-      // Y-axel (1-10)
+      // Y-axel (Mörka linjer och ljus text)
       ctx.lineWidth = 1;
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'right';
@@ -367,13 +374,13 @@
 
       for (let i = 1; i <= 10; i++) {
         const y = padT + chartH - ((i - 1) / 9) * chartH;
-        ctx.strokeStyle = '#e5e7eb';
+        ctx.strokeStyle = '#32254a'; // Mörk lila rutnät
         ctx.beginPath();
         ctx.moveTo(padL, y);
         ctx.lineTo(w - padR, y);
         ctx.stroke();
 
-        ctx.fillStyle = '#6b7280';
+        ctx.fillStyle = '#94a3b8'; // Ljusgrå text för siffrorna
         ctx.fillText(i.toString(), padL - 8, y);
       }
 
@@ -410,7 +417,7 @@
       const uniqueDates = Array.from(new Set(allTimestamps)).sort((a, b) => a - b);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillStyle = '#6b7280';
+      ctx.fillStyle = '#94a3b8';
 
       const step = Math.ceil(uniqueDates.length / 5);
       uniqueDates.forEach((ts, idx) => {
@@ -425,7 +432,7 @@
       activeGraphs.forEach(g => {
         const points = [...g.points].sort((a, b) => new Date(a.date) - new Date(b.date));
 
-        ctx.strokeStyle = g.color || '#4f46e5';
+        ctx.strokeStyle = g.color || '#818cf8';
         ctx.lineWidth = 3;
         ctx.beginPath();
 
@@ -441,12 +448,12 @@
           const x = getX(new Date(p.date).getTime());
           const y = getY(p.value);
 
-          ctx.fillStyle = g.color || '#4f46e5';
+          ctx.fillStyle = g.color || '#818cf8';
           ctx.beginPath();
           ctx.arc(x, y, 5, 0, Math.PI * 2);
           ctx.fill();
 
-          ctx.strokeStyle = '#ffffff';
+          ctx.strokeStyle = '#1c132b'; // Mörk kant runt punkterna
           ctx.lineWidth = 2;
           ctx.stroke();
         });
