@@ -41,7 +41,6 @@
 
     #chartContainer { position: relative; width: 100%; height: 320px; overflow: hidden; border-radius: 8px; background: #130c1e; }
     
-    /* Viktigt för att tillåta touch/zoom utan att hela sidan dras */
     #chartCanvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
     #chartCanvas:active { cursor: grabbing; }
 
@@ -140,11 +139,11 @@
       projects: [{ id: 'p1', name: 'Hälsa & Mående', graphs: [{ id: 'g1', name: 'Sömn', color: '#818cf8', visible: true, points: [] }] }]
     };
 
-    // Zoom- & Panorerings-variabler
-    let transform = { x: 0, y: 0, scale: 1 };
+    // Enbart zoom och panering på X-axeln (bredden)
+    let transform = { x: 0, scale: 1 };
 
     function resetZoom() {
-      transform = { x: 0, y: 0, scale: 1 };
+      transform = { x: 0, scale: 1 };
       drawChart();
     }
 
@@ -330,7 +329,6 @@
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
       
-      // Återställ skala och sätt till DPR
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.scale(dpr, dpr);
 
@@ -356,36 +354,33 @@
       const minT = Math.min(...allTimestamps);
       const maxT = Math.max(...allTimestamps);
 
-      // Transformerade funktioner för X och Y
+      // X skalas baserat på zoom/pan
       function getScaledX(ts) {
         const base = minT === maxT ? chartW / 2 : ((ts - minT) / (maxT - minT)) * chartW;
         return padL + base * transform.scale + transform.x;
       }
 
-      function getScaledY(val) {
+      // Y är helt FAST och opåverkad av zoom
+      function getFixedY(val) {
         const clamped = Math.max(1, Math.min(10, val));
-        const base = chartH - ((clamped - 1) / 9) * chartH;
-        return padT + base * transform.scale + transform.y;
+        return padT + chartH - ((clamped - 1) / 9) * chartH;
       }
 
-      // --- RITA AXLAR (Bakgrund & Text) ---
+      // --- RITA Y-AXEL (Fast höjd 1-10) ---
       ctx.lineWidth = 1;
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'middle';
 
-      // Y-axel (1-10) - visas bara om de hamnar inom rutans höjd
       for (let i = 1; i <= 10; i++) {
-        const y = getScaledY(i);
-        if (y >= padT && y <= padT + chartH) {
-          ctx.strokeStyle = '#2d2242'; 
-          ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
-          ctx.fillStyle = '#94a3b8';
-          ctx.fillText(i.toString(), padL - 8, y);
-        }
+        const y = getFixedY(i);
+        ctx.strokeStyle = '#2d2242'; 
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(i.toString(), padL - 8, y);
       }
 
-      // X-axel (Datum) - begränsar hur tätt de ritas så texten inte överlappar
+      // --- RITA X-AXEL (Datum som flyttar sig horisontellt) ---
       const uniqueDates = Array.from(new Set(allTimestamps)).sort((a, b) => a - b);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
@@ -394,13 +389,11 @@
       uniqueDates.forEach((ts) => {
         const x = getScaledX(ts);
         if (x >= padL && x <= w - padR) {
-          // Rita bara text om det är minst 40 pixlar från förra texten (hindrar kluster)
           if (x - lastDrawnX > 45) {
             const d = new Date(ts);
             ctx.fillStyle = '#94a3b8';
             ctx.fillText(`${d.getDate()}/${d.getMonth() + 1}`, x, h - padB + 8);
             
-            // Svaga lodräta linjer för tydlighet
             ctx.strokeStyle = '#221932';
             ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + chartH); ctx.stroke();
             
@@ -409,7 +402,7 @@
         }
       });
 
-      // --- KLIPPMASK: Rita graferna enbart inuti rutnätet ---
+      // --- KLIPPMASK: Rita graferna enbart inuti graf-rutan ---
       ctx.save();
       ctx.beginPath();
       ctx.rect(padL, padT, chartW, chartH);
@@ -418,22 +411,21 @@
       activeGraphs.forEach(g => {
         const points = [...g.points].sort((a, b) => new Date(a.date) - new Date(b.date));
 
-        // 1. Mjuk SPLINE-kurva (Bezier)
+        // Mjuk SPLINE-kurva (Enbart skapad på X-axeln)
         ctx.strokeStyle = g.color || '#818cf8';
         ctx.lineWidth = 3;
         ctx.beginPath();
 
         points.forEach((p, idx) => {
           const x = getScaledX(new Date(p.date).getTime());
-          const y = getScaledY(p.value);
+          const y = getFixedY(p.value);
           if (idx === 0) {
             ctx.moveTo(x, y);
           } else {
             const prevP = points[idx - 1];
             const prevX = getScaledX(new Date(prevP.date).getTime());
-            const prevY = getScaledY(prevP.value);
+            const prevY = getFixedY(prevP.value);
             
-            // Räkna ut kontrollpunkter för mjuka svängar
             const cp1x = (prevX + x) / 2;
             const cp2x = (prevX + x) / 2;
             ctx.bezierCurveTo(cp1x, prevY, cp2x, y, x, y);
@@ -441,10 +433,10 @@
         });
         ctx.stroke();
 
-        // 2. Datapunkter
+        // Datapunkter
         points.forEach(p => {
           const x = getScaledX(new Date(p.date).getTime());
-          const y = getScaledY(p.value);
+          const y = getFixedY(p.value);
           ctx.fillStyle = g.color || '#818cf8';
           ctx.beginPath();
           ctx.arc(x, y, 5, 0, Math.PI * 2);
@@ -455,86 +447,73 @@
         });
       });
 
-      // Ta bort klippmasken så resten av sidan inte påverkas
       ctx.restore();
     }
 
-    // --- EVENT-LISTENERS FÖR ZOOM OCH PANORERING ---
+    // --- ENBART HORISONTELL ZOOM & PANORERING ---
     const canvas = document.getElementById('chartCanvas');
     
-    // Mushjul (Scroll för att zooma på dator)
+    // Zoom på X-axeln med mushjul
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left - 35; // padL
-      const mouseY = e.clientY - rect.top - 20;  // padT
 
       const zoomSens = 0.002;
       const delta = -e.deltaY * zoomSens;
       let newScale = Math.max(1, Math.min(transform.scale * Math.exp(delta), 30));
 
       transform.x = mouseX - (mouseX - transform.x) * (newScale / transform.scale);
-      transform.y = mouseY - (mouseY - transform.y) * (newScale / transform.scale);
       transform.scale = newScale;
       drawChart();
     });
 
-    // Mus-drag (Dra med musen för att panorera)
-    let isDragging = false, lastX = 0, lastY = 0, initialPinchDist = null, initialScale = 1;
+    let isDragging = false, lastX = 0, initialPinchDist = null, initialScale = 1;
 
+    // Mus-drag (Enbart X-led)
     canvas.addEventListener('mousedown', (e) => {
       isDragging = true;
-      lastX = e.clientX; lastY = e.clientY;
+      lastX = e.clientX;
     });
     window.addEventListener('mousemove', (e) => {
       if (!isDragging) return;
       transform.x += (e.clientX - lastX);
-      transform.y += (e.clientY - lastY);
-      lastX = e.clientX; lastY = e.clientY;
+      lastX = e.clientX;
       drawChart();
     });
     window.addEventListener('mouseup', () => isDragging = false);
 
-    // Touch-kontroller för mobil (Dra = panorera, Nyp = zooma)
+    // Touch för mobil (Enbart X-led)
     canvas.addEventListener('touchstart', (e) => {
       if (e.touches.length === 1) {
         isDragging = true;
-        lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+        lastX = e.touches[0].clientX;
       } else if (e.touches.length === 2) {
         isDragging = false;
-        initialPinchDist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
+        initialPinchDist = Math.abs(e.touches[0].clientX - e.touches[1].clientX);
         initialScale = transform.scale;
       }
-      e.preventDefault(); // Hindrar skärmen från att rulla iväg
+      e.preventDefault();
     }, { passive: false });
 
     canvas.addEventListener('touchmove', (e) => {
       e.preventDefault();
       if (isDragging && e.touches.length === 1) {
         transform.x += (e.touches[0].clientX - lastX);
-        transform.y += (e.touches[0].clientY - lastY);
-        lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
+        lastX = e.touches[0].clientX;
         drawChart();
       } else if (e.touches.length === 2 && initialPinchDist) {
-        const dist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        let newScale = Math.max(1, Math.min(initialScale * (dist / initialPinchDist), 30));
+        const dist = Math.abs(e.touches[0].clientX - e.touches[1].clientX);
+        if (dist > 0) {
+          let newScale = Math.max(1, Math.min(initialScale * (dist / initialPinchDist), 30));
+          const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          const rect = canvas.getBoundingClientRect();
+          const mouseX = centerX - rect.left - 35;
 
-        const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-        const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        const rect = canvas.getBoundingClientRect();
-        const mouseX = centerX - rect.left - 35;
-        const mouseY = centerY - rect.top - 20;
-
-        transform.x = mouseX - (mouseX - transform.x) * (newScale / transform.scale);
-        transform.y = mouseY - (mouseY - transform.y) * (newScale / transform.scale);
-        transform.scale = newScale;
-        drawChart();
+          transform.x = mouseX - (mouseX - transform.x) * (newScale / transform.scale);
+          transform.scale = newScale;
+          drawChart();
+        }
       }
     }, { passive: false });
 
