@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mina Grafer</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4f46e5">
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #f3f4f6; margin: 0; padding: 15px; color: #1f2937; }
+    h1, h2, h3 { margin-top: 0; }
+    .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    .project-card { background: #eef2ff; border: 1px solid #c7d2fe; }
+    
+    label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px; color: #4b5563; }
+    input, select, button { width: 100%; padding: 10px; margin-bottom: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 1rem; }
+    input[type="color"] { height: 45px; padding: 2px; cursor: pointer; }
+    
+    button { background-color: #4f46e5; color: white; border: none; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    button:active { background-color: #4338ca; }
+    button.danger { background-color: #ef4444; }
+    button.secondary { background-color: #6b7280; }
+    
+    .row { display: flex; gap: 10px; }
+    .row > div { flex: 1; }
+
+    #chartContainer { position: relative; width: 100%; height: 320px; }
+    canvas { width: 100%; height: 100%; display: block; }
+
+    .graph-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; background: #f9fafb; padding: 6px 10px; border-radius: 20px; border: 1px solid #e5e7eb; font-size: 0.85rem; }
+    .color-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+
+    .data-list { max-height: 200px; overflow-y: auto; font-size: 0.9rem; }
+    .data-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+    .data-item button { width: auto; margin: 0; padding: 4px 8px; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+
+  <h1>📊 Mina Grafer</h1>
+
+  <!-- Projekthantering -->
+  <div class="card project-card">
+    <label for="projectSelect">Aktivt Projekt</label>
+    <div class="row">
+      <div style="flex: 2;">
+        <select id="projectSelect" onchange="switchProject(this.value)"></select>
+      </div>
+      <div>
+        <button class="danger" onclick="deleteActiveProject()">Radera</button>
+      </div>
+    </div>
+
+    <form id="projectForm" style="margin-top: 8px;">
+      <div class="row">
+        <div>
+          <input type="text" id="projectName" placeholder="Nytt projektnamn..." required style="margin-bottom:0;">
+        </div>
+        <div style="flex: 0.5;">
+          <button type="submit" style="margin-bottom:0;">+ Skapa</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Graf-visning -->
+  <div class="card">
+    <h2 id="currentProjectTitle">Översikt</h2>
+    <div id="legend" class="graph-legend"></div>
+    <div id="chartContainer">
+      <canvas id="chartCanvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Lägg till datapunkt -->
+  <div class="card">
+    <h3>Skriv in nytt värde</h3>
+    <form id="pointForm">
+      <label for="graphSelect">Välj Graf</label>
+      <select id="graphSelect" required></select>
+
+      <div class="row">
+        <div>
+          <label for="pointDate">Datum</label>
+          <input type="date" id="pointDate" required>
+        </div>
+        <div>
+          <label for="pointValue">Nummer (1 - 10)</label>
+          <input type="number" id="pointValue" min="1" max="10" step="0.1" value="5" required>
+        </div>
+      </div>
+
+      <button type="submit">Spara datapunkt</button>
+    </form>
+  </div>
+
+  <!-- Skapa ny graf i projektet -->
+  <div class="card">
+    <h3>Skapa ny graf i projektet</h3>
+    <form id="graphForm">
+      <div class="row">
+        <div>
+          <label for="graphName">Grafens Namn</label>
+          <input type="text" id="graphName" placeholder="t.ex. Energi, Humör..." required>
+        </div>
+        <div style="flex: 0.4;">
+          <label for="graphColor">Färg</label>
+          <input type="color" id="graphColor" value="#4f46e5">
+        </div>
+      </div>
+      <button type="submit">Skapa Graf</button>
+    </form>
+  </div>
+
+  <!-- Hantera sparad data -->
+  <div class="card">
+    <h3>Hantera Grafer & Punkter</h3>
+    <div id="dataManager" class="data-list"></div>
+  </div>
+
+  <script>
+    // --- DATAMODELL MED PROJEKT ---
+    const STORAGE_KEY = 'pwa_projects_data_v2';
+
+    let appData = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {
+      activeProjectId: 'p1',
+      projects: [
+        {
+          id: 'p1',
+          name: 'Hälsa & Mående',
+          graphs: [
+            { id: 'g1', name: 'Sömn', color: '#4f46e5', visible: true, points: [] }
+          ]
+        }
+      ]
+    };
+
+    function saveData() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+      renderUI();
+      drawChart();
+    }
+
+    function getActiveProject() {
+      let proj = appData.projects.find(p => p.id === appData.activeProjectId);
+      if (!proj && appData.projects.length > 0) {
+        proj = appData.projects[0];
+        appData.activeProjectId = proj.id;
+      }
+      return proj;
+    }
+
+    // Sett default datum till idag
+    document.getElementById('pointDate').valueAsDate = new Date();
+
+    // --- PROJEKTHANTERING ---
+    function switchProject(id) {
+      appData.activeProjectId = id;
+      saveData();
+    }
+
+    document.getElementById('projectForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('projectName');
+      const name = input.value.trim();
+      if (!name) return;
+
+      const newProj = {
+        id: 'p_' + Date.now(),
+        name: name,
+        graphs: []
+      };
+
+      appData.projects.push(newProj);
+      appData.activeProjectId = newProj.id;
+      input.value = '';
+      saveData();
+    });
+
+    function deleteActiveProject() {
+      if (appData.projects.length <= 1) {
+        alert('Du måste ha minst ett projekt kvar.');
+        return;
+      }
+      const activeProj = getActiveProject();
+      if (confirm(`Vill du radera projektet "${activeProj.name}" och alla dess grafer?`)) {
+        appData.projects = appData.projects.filter(p => p.id !== activeProj.id);
+        appData.activeProjectId = appData.projects[0].id;
+        saveData();
+      }
+    }
+
+    // --- GRAF- & DATAPUNKTS-HANTERING ---
+    document.getElementById('graphForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const activeProj = getActiveProject();
+      if (!activeProj) return;
+
+      const name = document.getElementById('graphName').value.trim();
+      const color = document.getElementById('graphColor').value;
+
+      activeProj.graphs.push({
+        id: 'g_' + Date.now(),
+        name: name,
+        color: color,
+        visible: true,
+        points: []
+      });
+
+      document.getElementById('graphName').value = '';
+      saveData();
+    });
+
+    document.getElementById('pointForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const activeProj = getActiveProject();
+      if (!activeProj) return;
+
+      const graphId = document.getElementById('graphSelect').value;
+      const date = document.getElementById('pointDate').value;
+      const value = parseFloat(document.getElementById('pointValue').value);
+
+      const graph = activeProj.graphs.find(g => g.id === graphId);
+      if (graph) {
+        const existingIdx = graph.points.findIndex(p => p.date === date);
+        if (existingIdx >= 0) {
+          graph.points[existingIdx].value = value;
+        } else {
+          graph.points.push({ date, value });
+        }
+        saveData();
+      }
+    });
+
+    function deleteGraph(id) {
+      const activeProj = getActiveProject();
+      if (confirm('Vill du ta bort hela grafen?')) {
+        activeProj.graphs = activeProj.graphs.filter(g => g.id !== id);
+        saveData();
+      }
+    }
+
+    function deletePoint(graphId, date) {
+      const activeProj = getActiveProject();
+      const graph = activeProj.graphs.find(g => g.id === graphId);
+      if (graph) {
+        graph.points = graph.points.filter(p => p.date !== date);
+        saveData();
+      }
+    }
+
+    function toggleVisibility(id) {
+      const activeProj = getActiveProject();
+      const graph = activeProj.graphs.find(g => g.id === id);
+      if (graph) {
+        graph.visible = !graph.visible;
+        saveData();
+      }
+    }
+
+    // --- UPPDATERA UI ---
+    function renderUI() {
+      const activeProj = getActiveProject();
+
+      // 1. Projektdropdown
+      const projSelect = document.getElementById('projectSelect');
+      projSelect.innerHTML = '';
+      appData.projects.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name;
+        if (p.id === appData.activeProjectId) opt.selected = true;
+        projSelect.appendChild(opt);
+      });
+
+      document.getElementById('currentProjectTitle').textContent = activeProj ? activeProj.name : 'Översikt';
+
+      // 2. Grafväljare i punktsformuläret
+      const select = document.getElementById('graphSelect');
+      select.innerHTML = '';
+      if (activeProj) {
+        activeProj.graphs.forEach(g => {
+          const opt = document.createElement('option');
+          opt.value = g.id;
+          opt.textContent = g.name;
+          select.appendChild(opt);
+        });
+      }
+
+      // 3. Legend
+      const legend = document.getElementById('legend');
+      legend.innerHTML = '';
+      if (activeProj) {
+        activeProj.graphs.forEach(g => {
+          const item = document.createElement('label');
+          item.className = 'legend-item';
+          item.style.cursor = 'pointer';
+          item.innerHTML = `
+            <input type="checkbox" ${g.visible !== false ? 'checked' : ''} onchange="toggleVisibility('${g.id}')">
+            <span class="color-dot" style="background:${g.color}"></span>
+            <span>${g.name}</span>
+          `;
+          legend.appendChild(item);
+        });
+      }
+
+      // 4. Listhantering för inställningar
+      const manager = document.getElementById('dataManager');
+      manager.innerHTML = '';
+      if (!activeProj || activeProj.graphs.length === 0) {
+        manager.innerHTML = '<p style="color:#9ca3af; text-align:center;">Inga grafer finns i detta projekt än.</p>';
+        return;
+      }
+
+      activeProj.graphs.forEach(g => {
+        const div = document.createElement('div');
+        div.style.marginBottom = '12px';
+        div.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <strong><span class="color-dot" style="background:${g.color}"></span> ${g.name}</strong>
+            <button class="danger" style="width:auto; margin:0; padding:4px 8px;" onclick="deleteGraph('${g.id}')">Ta bort graf</button>
+          </div>
+        `;
+        
+        const sortedPoints = [...g.points].sort((a,b) => new Date(a.date) - new Date(b.date));
+        sortedPoints.forEach(p => {
+          const pDiv = document.createElement('div');
+          pDiv.className = 'data-item';
+          pDiv.style.paddingLeft = '15px';
+          pDiv.innerHTML = `
+            <span>${p.date} ➔ <b>${p.value}</b></span>
+            <button class="danger" onclick="deletePoint('${g.id}', '${p.date}')">X</button>
+          `;
+          div.appendChild(pDiv);
+        });
+        manager.appendChild(div);
+      });
+    }
+
+    // --- RITA GRAF ---
+    function drawChart() {
+      const canvas = document.getElementById('chartCanvas');
+      const ctx = canvas.getContext('2d');
+      const activeProj = getActiveProject();
+
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+
+      const w = rect.width;
+      const h = rect.height;
+      const padL = 35, padR = 20, padT = 20, padB = 40;
+      const chartW = w - padL - padR;
+      const chartH = h - padT - padB;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // Y-axel (1-10)
+      ctx.lineWidth = 1;
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+
+      for (let i = 1; i <= 10; i++) {
+        const y = padT + chartH - ((i - 1) / 9) * chartH;
+        ctx.strokeStyle = '#e5e7eb';
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(w - padR, y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#6b7280';
+        ctx.fillText(i.toString(), padL - 8, y);
+      }
+
+      if (!activeProj) return;
+
+      const activeGraphs = activeProj.graphs.filter(g => g.visible !== false && g.points && g.points.length > 0);
+
+      let allTimestamps = [];
+      activeGraphs.forEach(g => {
+        g.points.forEach(p => allTimestamps.push(new Date(p.date).getTime()));
+      });
+
+      if (allTimestamps.length === 0) {
+        ctx.fillStyle = '#9ca3af';
+        ctx.textAlign = 'center';
+        ctx.fillText('Ingen data i detta projekt', w / 2, h / 2);
+        return;
+      }
+
+      const minT = Math.min(...allTimestamps);
+      const maxT = Math.max(...allTimestamps);
+
+      function getX(ts) {
+        if (minT === maxT) return padL + chartW / 2;
+        return padL + ((ts - minT) / (maxT - minT)) * chartW;
+      }
+
+      function getY(val) {
+        const clamped = Math.max(1, Math.min(10, val));
+        return padT + chartH - ((clamped - 1) / 9) * chartH;
+      }
+
+      // X-axel (Datum)
+      const uniqueDates = Array.from(new Set(allTimestamps)).sort((a, b) => a - b);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = '#6b7280';
+
+      const step = Math.ceil(uniqueDates.length / 5);
+      uniqueDates.forEach((ts, idx) => {
+        if (idx % step === 0 || idx === uniqueDates.length - 1) {
+          const x = getX(ts);
+          const d = new Date(ts);
+          ctx.fillText(`${d.getDate()}/${d.getMonth() + 1}`, x, h - padB + 8);
+        }
+      });
+
+      // Linjer & punkter
+      activeGraphs.forEach(g => {
+        const points = [...g.points].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        ctx.strokeStyle = g.color || '#4f46e5';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+
+        points.forEach((p, idx) => {
+          const x = getX(new Date(p.date).getTime());
+          const y = getY(p.value);
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        points.forEach(p => {
+          const x = getX(new Date(p.date).getTime());
+          const y = getY(p.value);
+
+          ctx.fillStyle = g.color || '#4f46e5';
+          ctx.beginPath();
+          ctx.arc(x, y, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        });
+      });
+    }
+
+    window.addEventListener('resize', drawChart);
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(err => console.log('SW Registration failed', err));
+    }
+
+    renderUI();
+    drawChart();
+  </script>
+</body>
+</html>
